@@ -1,0 +1,7 @@
+# Do not commit runtime data, test output, uploads, or other local artifacts under storage/.
+# Only the standard Laravel subtrees below are tracked; each has its own .gitignore for inner rules.
+*
+!app/
+!framework/
+!logs/
+!.gitignore

@@ -1,0 +1,12 @@
+# Optional: Kokoro TTS for ATLAAS Phase 3c (student Speak button).
+# Run: docker compose up -d kokoro
+# Laravel uses TTS_KOKORO_URL=http://localhost:8880 (dev) or http://kokoro:8880 (same Docker network).
+
+services:
+  kokoro:
+    image: ghcr.io/remsky/kokoro-fastapi-cpu:v0.2.1
+    ports:
+      - '8880:8880'
+    environment:
+      - PYTHONUNBUFFERED=1
+    restart: unless-stopped
