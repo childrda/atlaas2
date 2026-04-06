@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Student;
 use App\Http\Controllers\Controller;
 use App\Models\StudentSession;
 use App\Services\AI\LLMService;
+use App\Services\AI\OpenAiUserFacingMessage;
 use Illuminate\Http\Request;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 
@@ -68,7 +69,7 @@ class MessageController extends Controller
                     report($e);
                     echo 'data: '.json_encode([
                         'type' => 'error',
-                        'message' => 'Something went wrong. Please try again.',
+                        'message' => OpenAiUserFacingMessage::from($e),
                     ])."\n\n";
                     if (ob_get_level() > 0) {
                         ob_flush();

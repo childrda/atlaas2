@@ -1,4 +1,5 @@
 import StudentLayout from '@/Layouts/StudentLayout';
+import { studentModeLabel } from '@/lib/studentMode';
 import type { LearningSpace } from '@/types/models';
 import { Link, usePage } from '@inertiajs/react';
 
@@ -23,6 +24,7 @@ export default function StudentSpacesIndex() {
                                 {s.teacher?.name ?? 'Teacher'}
                                 {s.subject ? ` · ${s.subject}` : ''}
                             </p>
+                            <p className="mt-2 text-xs text-slate-600">{studentModeLabel(s.student_mode)}</p>
                             <Link
                                 href={`/learn/spaces/${s.id}`}
                                 className="mt-4 inline-block rounded-md px-4 py-2 text-sm font-medium text-white"

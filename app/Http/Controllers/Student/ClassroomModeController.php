@@ -7,18 +7,19 @@ use App\Events\ClassroomSessionEnded;
 use App\Events\ClassroomSessionStarted;
 use App\Http\Controllers\Controller;
 use App\Http\Controllers\Student\Concerns\AuthorizesStudentLearningSpace;
+use App\Jobs\ProcessClassroomSafetyAlert;
 use App\Models\ClassroomLesson;
 use App\Models\ClassroomMessage;
 use App\Models\ClassroomSession;
-use App\Models\LessonQuizAttempt;
 use App\Models\LearningSpace;
+use App\Models\LessonQuizAttempt;
 use App\Services\Classroom\AgentOrchestrator;
 use App\Services\Classroom\DirectorService;
-use App\Jobs\ProcessClassroomSafetyAlert;
 use App\Services\Classroom\QuizGraderService;
 use App\Services\Classroom\WhiteboardService;
 use App\Services\Safety\ClassroomStudentSafetyCoordinator;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Log;
 use Inertia\Inertia;
 use Inertia\Response;
 use Symfony\Component\HttpFoundation\StreamedResponse;
@@ -42,6 +43,8 @@ class ClassroomModeController extends Controller
     {
         $this->authorizeStudentLearningSpace($request->user(), $space);
 
+        abort_unless($space->multi_agent_classroom_enabled, 403, 'Multi-agent classroom is not enabled for this space.');
+
         $lesson = ClassroomLesson::query()
             ->where('space_id', $space->id)
             ->where('status', 'published')
@@ -62,7 +65,7 @@ class ClassroomModeController extends Controller
                 'whiteboard_ledger' => [],
             ],
             'whiteboard_elements' => [],
-            'whiteboard_open' => false,
+            'whiteboard_open' => true,
             'status' => 'active',
         ]);
 
@@ -159,8 +162,9 @@ class ClassroomModeController extends Controller
 
         $director = $this->director;
         $orchestrator = $this->orchestrator;
+        $cuePrompt = fn (ClassroomSession $s): string => $this->generateCuePrompt($s);
 
-        return response()->stream(function () use ($session, $agents, $studentMessage, $maxTurns, $director, $orchestrator, $scopeBlock) {
+        return response()->stream(function () use ($session, $agents, $studentMessage, $maxTurns, $director, $orchestrator, $scopeBlock, $cuePrompt) {
             $send = function (array $event): void {
                 echo 'data: '.json_encode($event)."\n\n";
                 if (ob_get_level() > 0) {
@@ -169,81 +173,90 @@ class ClassroomModeController extends Controller
                 flush();
             };
 
-            $turnsThisRequest = 0;
-            $lastAgentPreview = '';
+            try {
+                $turnsThisRequest = 0;
+                $lastAgentPreview = '';
 
-            while ($turnsThisRequest < $maxTurns) {
-                $session->refresh();
+                while ($turnsThisRequest < $maxTurns) {
+                    $session->refresh();
 
-                $nextId = $director->nextAgentId($session, $agents->all());
+                    $nextId = $director->nextAgentId($session, $agents->all());
 
-                if ($nextId === null) {
-                    break;
-                }
-
-                if ($nextId === 'USER') {
-                    $send(['type' => 'cue_user', 'data' => [
-                        'prompt' => $this->generateCuePrompt($session),
-                    ]]);
-                    break;
-                }
-
-                $agent = $agents->firstWhere('id', $nextId);
-                if (! $agent) {
-                    break;
-                }
-
-                $send(['type' => 'thinking', 'data' => ['stage' => 'agent_loading', 'agentId' => $agent->id]]);
-
-                $allText = '';
-                $allActions = [];
-
-                foreach ($orchestrator->generateTurn($session, $agent, $studentMessage, $scopeBlock) as $event) {
-                    $send($event);
-                    if ($event['type'] === 'text_delta') {
-                        $allText .= $event['data']['content'] ?? '';
-                    }
-                    if ($event['type'] === 'action') {
-                        $allActions[] = $event['data'];
+                    if ($nextId === null) {
+                        break;
                     }
 
-                    if ($event['type'] === 'action' && ($event['data']['actionName'] ?? '') === 'discussion') {
-                        $topic = (string) ($event['data']['params']['topic'] ?? '');
-                        $prompt = $event['data']['params']['prompt'] ?? null;
-                        $session->update([
-                            'session_type' => 'discussion',
-                            'director_state' => array_merge($session->director_state ?? [], [
-                                'discussion_topic' => $topic,
-                                'discussion_prompt' => $prompt,
-                            ]),
-                        ]);
+                    if ($nextId === 'USER') {
+                        $send(['type' => 'cue_user', 'data' => [
+                            'prompt' => $cuePrompt($session),
+                        ]]);
+                        break;
                     }
+
+                    $agent = $agents->firstWhere('id', $nextId);
+                    if (! $agent) {
+                        break;
+                    }
+
+                    $send(['type' => 'thinking', 'data' => ['stage' => 'agent_loading', 'agentId' => $agent->id]]);
+
+                    $allText = '';
+                    $allActions = [];
+
+                    foreach ($orchestrator->generateTurn($session, $agent, $studentMessage, $scopeBlock) as $event) {
+                        $send($event);
+                        if ($event['type'] === 'text_delta') {
+                            $allText .= $event['data']['content'] ?? '';
+                        }
+                        if ($event['type'] === 'action') {
+                            $allActions[] = $event['data'];
+                        }
+
+                        if ($event['type'] === 'action' && ($event['data']['actionName'] ?? '') === 'discussion') {
+                            $topic = (string) ($event['data']['params']['topic'] ?? '');
+                            $prompt = $event['data']['params']['prompt'] ?? null;
+                            $session->update([
+                                'session_type' => 'discussion',
+                                'director_state' => array_merge($session->director_state ?? [], [
+                                    'discussion_topic' => $topic,
+                                    'discussion_prompt' => $prompt,
+                                ]),
+                            ]);
+                        }
+                    }
+
+                    ClassroomMessage::create([
+                        'session_id' => $session->id,
+                        'district_id' => $session->district_id,
+                        'sender_type' => 'agent',
+                        'agent_id' => $agent->id,
+                        'content_text' => $allText,
+                        'actions_json' => $allActions,
+                    ]);
+
+                    $lastAgentPreview = mb_substr($allText, 0, 70);
+
+                    $turnsThisRequest++;
+                    $session->refresh();
                 }
 
-                ClassroomMessage::create([
+                $session->load(['student', 'lesson.space']);
+                $preview = $lastAgentPreview !== '' ? $lastAgentPreview : mb_substr($studentMessage, 0, 70);
+                ClassroomMessageSent::dispatch(
+                    $session,
+                    $preview,
+                    ClassroomMessage::query()->where('session_id', $session->id)->count(),
+                );
+
+                $send(['type' => 'done', 'data' => ['totalAgents' => $turnsThisRequest]]);
+            } catch (\Throwable $e) {
+                Log::error('Classroom message stream failed', [
                     'session_id' => $session->id,
-                    'district_id' => $session->district_id,
-                    'sender_type' => 'agent',
-                    'agent_id' => $agent->id,
-                    'content_text' => $allText,
-                    'actions_json' => $allActions,
+                    'message' => $e->getMessage(),
                 ]);
-
-                $lastAgentPreview = mb_substr($allText, 0, 70);
-
-                $turnsThisRequest++;
-                $session->refresh();
+                $send(['type' => 'error', 'data' => ['message' => 'The classroom hit an error. Please try sending again.']]);
+                $send(['type' => 'done', 'data' => ['totalAgents' => 0]]);
             }
-
-            $session->load(['student', 'lesson.space']);
-            $preview = $lastAgentPreview !== '' ? $lastAgentPreview : mb_substr($studentMessage, 0, 70);
-            ClassroomMessageSent::dispatch(
-                $session,
-                $preview,
-                ClassroomMessage::query()->where('session_id', $session->id)->count(),
-            );
-
-            $send(['type' => 'done', 'data' => ['totalAgents' => $turnsThisRequest]]);
         }, 200, $this->sseHeaders());
     }
 

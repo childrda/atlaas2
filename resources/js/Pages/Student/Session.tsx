@@ -2,8 +2,10 @@ import { AtlaasAvatar } from '@/Components/Atlaas/AtlaasAvatar';
 import { ChatBubble } from '@/Components/Atlaas/ChatBubble';
 import { SpeakButton } from '@/Components/Atlaas/SpeakButton';
 import { ThinkingIndicator } from '@/Components/Atlaas/ThinkingIndicator';
+import { buildCsrfFetchHeaders } from '@/lib/laravelCsrf';
+import { studentModeLabel } from '@/lib/studentMode';
 import type { Message, MessageSegment, StudentSession } from '@/types/models';
-import { router, usePage } from '@inertiajs/react';
+import { Link, router, usePage } from '@inertiajs/react';
 import { useEffect, useRef, useState } from 'react';
 
 interface Props {
@@ -11,20 +13,14 @@ interface Props {
     messages: Message[];
 }
 
-function readXsrfTokenFromCookie(): string {
-    const row = document.cookie.split('; ').find((r) => r.startsWith('XSRF-TOKEN='));
-    if (!row) return '';
-    const raw = row.slice('XSRF-TOKEN='.length);
-    try {
-        return decodeURIComponent(raw);
-    } catch {
-        return raw;
-    }
-}
-
 export default function SessionPage({ session, messages: initialMessages }: Props) {
     const page = usePage();
     const sharedCsrf = (page.props as { csrf_token?: string }).csrf_token;
+    const { classroomLessonAvailable, multiAgentClassroomEnabled, classroomLessonReady } = page.props as {
+        classroomLessonAvailable?: boolean;
+        multiAgentClassroomEnabled?: boolean;
+        classroomLessonReady?: boolean;
+    };
 
     const [messages, setMessages] = useState<Message[]>(initialMessages);
     const [inputValue, setInputValue] = useState('');
@@ -32,10 +28,19 @@ export default function SessionPage({ session, messages: initialMessages }: Prop
     const [streamingContent, setStreamingContent] = useState('');
     const [limitReached, setLimitReached] = useState(false);
     const bottomRef = useRef<HTMLDivElement>(null);
+    const inputRef = useRef<HTMLTextAreaElement>(null);
 
     useEffect(() => {
         bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
     }, [messages, streamingContent]);
+
+    /** Re-focus after each reply; `disabled` during streaming was dropping focus and it did not return. */
+    useEffect(() => {
+        if (!isStreaming && !limitReached) {
+            const id = requestAnimationFrame(() => inputRef.current?.focus());
+            return () => cancelAnimationFrame(id);
+        }
+    }, [isStreaming, limitReached]);
 
     const pushAssistantMessage = (content: string, segments?: MessageSegment[]) => {
         setMessages((prev) => [
@@ -66,20 +71,12 @@ export default function SessionPage({ session, messages: initialMessages }: Prop
         setStreamingContent('');
 
         try {
-            const csrfToken =
-                sharedCsrf ??
-                document.querySelector<HTMLMetaElement>('meta[name="csrf-token"]')?.content ??
-                '';
-            const xsrf = readXsrfTokenFromCookie();
-
             const response = await fetch(`/learn/sessions/${session.id}/messages`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
                     Accept: 'text/event-stream',
-                    'X-CSRF-TOKEN': csrfToken,
-                    ...(xsrf ? { 'X-XSRF-TOKEN': xsrf } : {}),
-                    'X-Requested-With': 'XMLHttpRequest',
+                    ...buildCsrfFetchHeaders(sharedCsrf),
                 },
                 credentials: 'same-origin',
                 body: JSON.stringify({ content }),
@@ -182,6 +179,10 @@ export default function SessionPage({ session, messages: initialMessages }: Prop
         router.post(`/learn/sessions/${session.id}/end`);
     };
 
+    const startClassroomMode = () => {
+        router.post(`/learn/spaces/${session.space.id}/classroom`);
+    };
+
     return (
         <div className="flex h-screen flex-col bg-white">
             <header className="flex items-center justify-between border-b border-gray-100 px-6 py-3">
@@ -200,6 +201,44 @@ export default function SessionPage({ session, messages: initialMessages }: Prop
                     I&apos;m done
                 </button>
             </header>
+
+            <div className="border-b border-slate-200 bg-slate-50 px-6 py-2 text-xs text-slate-700">
+                <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between sm:gap-x-3">
+                    <p>
+                        <span className="font-semibold text-slate-900">This space: </span>
+                        {studentModeLabel(session.space.student_mode)}
+                    </p>
+                    <div className="flex flex-wrap items-center gap-2">
+                        <Link
+                            href={`/learn/spaces/${session.space.id}`}
+                            className="text-[#1E3A5F] underline decoration-[#1E3A5F]/40 underline-offset-2"
+                        >
+                            Space home
+                        </Link>
+                        {classroomLessonAvailable && (
+                            <button
+                                type="button"
+                                onClick={startClassroomMode}
+                                className="rounded-md border border-[#1E3A5F] bg-white px-2.5 py-1 text-xs font-medium text-[#1E3A5F] hover:bg-slate-100"
+                            >
+                                Open multi-agent classroom
+                            </button>
+                        )}
+                    </div>
+                </div>
+                {multiAgentClassroomEnabled && !classroomLessonAvailable && !classroomLessonReady && (
+                    <p className="mt-2 text-slate-600">
+                        Multi-agent classroom will show a button here once your teacher publishes a finished lesson for
+                        this space.
+                    </p>
+                )}
+                {!multiAgentClassroomEnabled && classroomLessonReady && (
+                    <p className="mt-2 text-slate-600">
+                        A published lesson exists, but your teacher has not enabled the multi-agent classroom for this
+                        space.
+                    </p>
+                )}
+            </div>
 
             <div className="flex-1 space-y-4 overflow-y-auto px-6 py-4">
                 {messages.length === 0 && (
@@ -251,13 +290,16 @@ export default function SessionPage({ session, messages: initialMessages }: Prop
             <div className="border-t border-gray-100 px-6 py-4">
                 <div className="flex gap-3">
                     <textarea
+                        ref={inputRef}
                         value={inputValue}
                         onChange={(e) => setInputValue(e.target.value)}
                         onKeyDown={handleKeyDown}
                         placeholder="Ask ATLAAS something..."
                         rows={1}
-                        disabled={isStreaming || limitReached}
-                        className="flex-1 resize-none rounded-xl border border-gray-200 px-4 py-3 text-sm focus:border-amber-400 focus:outline-none disabled:opacity-50"
+                        readOnly={isStreaming}
+                        disabled={limitReached}
+                        aria-busy={isStreaming}
+                        className="flex-1 resize-none rounded-xl border border-gray-200 px-4 py-3 text-sm focus:border-amber-400 focus:outline-none read-only:cursor-wait disabled:opacity-50"
                     />
                     <button
                         type="button"

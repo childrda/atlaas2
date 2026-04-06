@@ -27,7 +27,7 @@ class LearningSpace extends BaseModel
     ];
 
     protected $fillable = [
-        'district_id', 'student_mode', 'teacher_id', 'classroom_id', 'title', 'description',
+        'district_id', 'student_mode', 'multi_agent_classroom_enabled', 'teacher_id', 'classroom_id', 'title', 'description',
         'subject', 'grade_level', 'cover_image', 'system_prompt', 'goals',
         'restrictions', 'allowed_tools', 'atlaas_tone', 'language',
         'max_messages', 'require_teacher_present', 'allow_session_restart',
@@ -45,6 +45,7 @@ class LearningSpace extends BaseModel
             'is_archived' => 'boolean',
             'require_teacher_present' => 'boolean',
             'allow_session_restart' => 'boolean',
+            'multi_agent_classroom_enabled' => 'boolean',
             'opens_at' => 'datetime',
             'closes_at' => 'datetime',
         ];

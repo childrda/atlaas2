@@ -10,6 +10,7 @@ use App\Models\LessonAgent;
 use App\Services\Classroom\AgentArchetypes;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -169,7 +170,14 @@ class LessonController extends Controller
     public function status(ClassroomLesson $lesson)
     {
         $this->authorize('view', $lesson);
-        $scenes = $lesson->scenes()->select('id', 'scene_type', 'title', 'generation_status', 'sequence_order')->get();
+        $scenes = $lesson->scenes()->select(
+            'id',
+            'scene_type',
+            'title',
+            'generation_status',
+            'sequence_order',
+            'generation_error',
+        )->get();
 
         return response()->json([
             'generation_status' => $lesson->generation_status,
@@ -178,9 +186,39 @@ class LessonController extends Controller
         ]);
     }
 
+    public function regenerate(ClassroomLesson $lesson): RedirectResponse
+    {
+        $this->authorize('update', $lesson);
+
+        if ($lesson->status === 'published') {
+            return back()->with('error', 'Unpublish this lesson before regenerating content.');
+        }
+
+        if ($lesson->generation_status !== 'failed') {
+            return back()->with('error', 'Regeneration is only available when generation has failed.');
+        }
+
+        DB::transaction(function () use ($lesson): void {
+            $lesson->scenes()->delete();
+            $lesson->update([
+                'outline' => null,
+                'generation_status' => 'pending',
+                'generation_progress' => ['message' => 'Queued for regeneration…'],
+            ]);
+        });
+
+        GenerateLessonOutlineJob::dispatch($lesson->id)->onQueue('default');
+
+        return back()->with('success', 'Lesson regeneration queued. Keep a queue worker running on the default queue.');
+    }
+
     public function publish(Request $request, ClassroomLesson $lesson)
     {
         $this->authorize('update', $lesson);
+
+        if ($lesson->scenes()->count() < 1) {
+            return back()->with('error', 'Add at least one scene before publishing this lesson.');
+        }
 
         $data = $request->validate([
             'space_id' => 'required|uuid',

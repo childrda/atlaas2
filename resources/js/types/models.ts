@@ -64,6 +64,8 @@ export interface LearningSpace {
     district_id?: string;
     /** Phase 3e: teacher_session | lms_help | open_tutor */
     student_mode?: string;
+    /** When false, students do not see / cannot start multi-agent classroom for this space. */
+    multi_agent_classroom_enabled?: boolean;
     title: string;
     description: string | null;
     subject: string | null;

@@ -2,7 +2,10 @@
 
 namespace App\Services\AI;
 
+use Illuminate\Http\Client\PendingRequest;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Str;
 
 /**
  * OpenAI-compatible chat completions (non-streaming and streaming).
@@ -12,21 +15,32 @@ class ChatCompletionClient
 {
     public function complete(string $systemPrompt, string $userPrompt, ?int $maxTokens = null): string
     {
+        $this->ensureApiKeyIfRequired();
+
         $maxTokens ??= (int) config('openai.max_output_tokens', 2000);
-        $payload = [
+        $payload = OpenAiChatParameters::withMaxOutputTokens([
             'model' => config('openai.model'),
             'messages' => [
                 ['role' => 'system', 'content' => $systemPrompt],
                 ['role' => 'user', 'content' => $userPrompt],
             ],
-            'max_tokens' => $maxTokens,
             'temperature' => (float) config('openai.temperature', 0.7),
-        ];
+        ], $maxTokens);
 
         $response = $this->http()->post($this->endpoint(), $payload);
 
         if (! $response->successful()) {
-            return '';
+            $json = $response->json();
+            $detail = is_array($json)
+                ? (string) ($json['error']['message'] ?? json_encode($json))
+                : $response->body();
+            Log::warning('OpenAI-compatible chat completion failed', [
+                'status' => $response->status(),
+                'body' => Str::limit($detail, 800),
+            ]);
+            throw new \RuntimeException(
+                'LLM request failed ('.$response->status().'): '.Str::limit($detail, 300)
+            );
         }
 
         return (string) ($response->json('choices.0.message.content') ?? '');
@@ -38,17 +52,18 @@ class ChatCompletionClient
      */
     public function stream(string $systemPrompt, array $messages, ?int $maxTokens = null): \Generator
     {
+        $this->ensureApiKeyIfRequired();
+
         $maxTokens ??= (int) config('openai.classroom_stream_max_tokens', 2000);
-        $payload = [
+        $payload = OpenAiChatParameters::withMaxOutputTokens([
             'model' => config('openai.model'),
-            'max_tokens' => $maxTokens,
             'temperature' => (float) config('openai.temperature', 0.7),
             'stream' => true,
             'messages' => array_merge(
                 [['role' => 'system', 'content' => $systemPrompt]],
                 $messages,
             ),
-        ];
+        ], $maxTokens);
 
         $response = $this->http()->withOptions(['stream' => true])->post($this->endpoint(), $payload);
 
@@ -83,6 +98,27 @@ class ChatCompletionClient
         }
     }
 
+    /**
+     * OpenAI-hosted endpoints require a key; local OpenAI-compatible servers often omit it.
+     */
+    private function ensureApiKeyIfRequired(): void
+    {
+        $key = trim((string) (config('openai.api_key') ?? ''));
+        if ($key !== '') {
+            return;
+        }
+
+        $base = strtolower(rtrim((string) config('openai.base_uri'), '/'));
+        $isOpenAiHosted = $base === '' || str_contains($base, 'api.openai.com');
+
+        if ($isOpenAiHosted) {
+            throw new \RuntimeException(
+                'OPENAI_API_KEY is empty. Lesson generation uses ChatCompletionClient against api.openai.com. '.
+                'Set OPENAI_API_KEY in .env, run `php artisan config:clear`, then restart your queue worker (`queue:work` or Horizon).'
+            );
+        }
+    }
+
     private function endpoint(): string
     {
         $base = rtrim((string) config('openai.base_uri'), '/');
@@ -96,7 +132,7 @@ class ChatCompletionClient
         return $base.'/chat/completions';
     }
 
-    private function http(): \Illuminate\Http\Client\PendingRequest
+    private function http(): PendingRequest
     {
         $headers = [
             'Content-Type' => 'application/json',

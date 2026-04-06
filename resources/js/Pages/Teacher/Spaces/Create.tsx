@@ -34,6 +34,7 @@ export default function SpacesCreate() {
         language: 'en',
         max_messages: '' as string | number,
         student_mode: (studentModeOptions[0]?.value ?? 'teacher_session') as string,
+        multi_agent_classroom_enabled: true,
     });
 
     function submit(e: FormEvent) {
@@ -57,6 +58,7 @@ export default function SpacesCreate() {
                         ? null
                         : Number(form.data.max_messages),
                 student_mode: form.data.student_mode,
+                multi_agent_classroom_enabled: form.data.multi_agent_classroom_enabled,
             },
             { onFinish: () => setSubmitting(false) }
         );
@@ -126,6 +128,23 @@ export default function SpacesCreate() {
                                 </label>
                             ))}
                         </div>
+                    </div>
+                    <div className="rounded-lg border border-gray-100 bg-gray-50/80 p-4">
+                        <label className="flex cursor-pointer items-start gap-3 text-sm">
+                            <input
+                                type="checkbox"
+                                className="mt-0.5"
+                                checked={form.data.multi_agent_classroom_enabled}
+                                onChange={(e) => form.setData('multi_agent_classroom_enabled', e.target.checked)}
+                            />
+                            <span>
+                                <span className="font-medium text-gray-900">Multi-agent classroom</span>
+                                <span className="mt-1 block text-xs text-gray-600">
+                                    When you publish a classroom lesson for this space, students can open the live
+                                    multi-agent experience. Turn off if you only want the regular chat session.
+                                </span>
+                            </span>
+                        </label>
                     </div>
                     <div>
                         <label className="block text-sm font-medium text-gray-700">Classroom</label>

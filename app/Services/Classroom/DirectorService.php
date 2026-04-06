@@ -83,11 +83,18 @@ class DirectorService
         }
 
         $prompt = $this->buildDirectorPrompt($session, $agents, $state);
-        $response = $this->llm->complete(
-            'You are the director of a multi-agent K-12 classroom. Output only a JSON object.',
-            $prompt,
-            120,
-        );
+        try {
+            $response = $this->llm->complete(
+                'You are the director of a multi-agent K-12 classroom. Output only a JSON object.',
+                $prompt,
+                120,
+            );
+        } catch (\Throwable $e) {
+            Log::warning('[Director] LLM call failed, falling back to teacher', ['error' => $e->getMessage()]);
+
+            return collect($agents)->firstWhere('role', 'teacher')?->id
+                ?? ($agents[0]->id ?? null);
+        }
 
         return $this->parseDirectorDecision($response, $agents);
     }

@@ -26,9 +26,16 @@ class LessonGeneratorService
         $outlines = $this->parseJsonArray($response);
 
         if ($outlines === []) {
+            $trimmed = trim($response);
             $lesson->update([
                 'generation_status' => 'failed',
-                'generation_progress' => ['message' => 'Failed to parse outline'],
+                'generation_progress' => [
+                    'message' => $trimmed === ''
+                        ? 'No outline returned (often: missing/invalid OPENAI_API_KEY, API error, or quota). Check storage/logs and queue workers.'
+                        : 'Could not parse outline JSON from the model.',
+                    'response_preview' => $trimmed !== '' ? mb_substr($trimmed, 0, 500) : null,
+                    'hint' => 'Confirm OPENAI_API_KEY in .env, run `php artisan config:clear`, and ensure `php artisan queue:work` or Horizon is processing the default queue.',
+                ],
             ]);
 
             return;
@@ -250,10 +257,11 @@ PROMPT;
         };
 
         $keyPoints = implode("\n- ", $outline['keyPoints'] ?? []);
+        $description = (string) ($outline['description'] ?? '');
 
         return <<<TEXT
 Title: {$scene->title}
-Description: {$outline['description'] ?? ''}
+Description: {$description}
 Key points:
 - {$keyPoints}
 

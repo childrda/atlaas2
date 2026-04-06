@@ -1,4 +1,5 @@
 import TeacherLayout from '@/Layouts/TeacherLayout';
+import { studentModeLabel } from '@/lib/studentMode';
 import type { LearningSpace, TeacherSpaceSessionRow } from '@/types/models';
 import { Link, router, usePage } from '@inertiajs/react';
 import { useState } from 'react';
@@ -61,6 +62,17 @@ export default function SpacesShow() {
                         <h1 className="text-2xl font-medium text-gray-900">{space.title}</h1>
                         <p className="mt-1 text-sm text-gray-500">
                             {[space.subject, space.grade_level].filter(Boolean).join(' · ') || '—'}
+                        </p>
+                        <p className="mt-2 max-w-xl text-xs text-gray-600">
+                            <span className="font-medium text-gray-800">Student mode:</span>{' '}
+                            {studentModeLabel(space.student_mode)}
+                            <span className="mx-2 text-gray-300">|</span>
+                            <span className="font-medium text-gray-800">Multi-agent classroom:</span>{' '}
+                            {space.multi_agent_classroom_enabled === false ? 'Off' : 'On'}
+                            <span className="mx-2 text-gray-300">|</span>
+                            <Link href={`/teach/spaces/${space.id}/edit`} className="text-[#1E3A5F] underline">
+                                Change in Edit
+                            </Link>
                         </p>
                         {space.is_public && (
                             <p className="mt-2 text-xs font-medium text-[#1E3A5F]">Listed on Discover</p>

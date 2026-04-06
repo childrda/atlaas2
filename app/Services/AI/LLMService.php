@@ -101,12 +101,13 @@ class LLMService
 
         $fullResponse = '';
 
-        $stream = OpenAI::chat()->createStreamed([
-            'model' => config('openai.model'),
-            'messages' => $messages,
-            'max_tokens' => 800,
-            'temperature' => 0.7,
-        ]);
+        $stream = OpenAI::chat()->createStreamed(
+            OpenAiChatParameters::withMaxOutputTokens([
+                'model' => config('openai.model'),
+                'messages' => $messages,
+                'temperature' => 0.7,
+            ], 800)
+        );
 
         foreach ($stream as $response) {
             $choice = $response->choices[0] ?? null;
@@ -124,8 +125,13 @@ class LLMService
 
         $this->storeMessages($session, $userMessage, $fullResponse, $flag);
 
-        $segments = $this->parser->parse($fullResponse);
-        $enriched = $this->enrichSegments($segments, config('atlaas.image_source', 'wikimedia'));
+        try {
+            $segments = $this->parser->parse($fullResponse);
+            $enriched = $this->enrichSegments($segments, config('atlaas.image_source', 'wikimedia'));
+        } catch (\Throwable $e) {
+            report($e);
+            $enriched = [['type' => 'text', 'content' => $fullResponse]];
+        }
 
         $onComplete($enriched);
     }

@@ -8,6 +8,7 @@ interface Scene {
     scene_type: string;
     generation_status: string;
     sequence_order: number;
+    generation_error?: string | null;
 }
 
 interface Agent {
@@ -42,7 +43,7 @@ export default function LessonsShow() {
     const { lesson, teacherSpaces, flash } = usePage().props as {
         lesson: Lesson;
         teacherSpaces: SpaceOpt[];
-        flash?: { success?: string };
+        flash?: { success?: string; error?: string };
     };
 
     const [status, setStatus] = useState(lesson.generation_status);
@@ -65,6 +66,11 @@ export default function LessonsShow() {
         scene_type: 'slide' as Scene['scene_type'],
         title: '',
     });
+
+    useEffect(() => {
+        setStatus(lesson.generation_status);
+        setProgress(lesson.generation_progress);
+    }, [lesson.generation_status, lesson.generation_progress]);
 
     useEffect(() => {
         setScenes(lesson.scenes ?? []);
@@ -146,6 +152,9 @@ export default function LessonsShow() {
               ? 100
               : 0;
 
+    /** Publish to space is allowed after auto-generation completes or once at least one scene exists (manual path). */
+    const canPublishToSpace = status === 'completed' || orderedScenes.length > 0;
+
     return (
         <TeacherLayout>
             <div className="p-8">
@@ -158,12 +167,19 @@ export default function LessonsShow() {
                         {flash.success}
                     </div>
                 )}
+                {flash?.error && (
+                    <div className="mt-4 rounded-md border border-red-200 bg-red-50 px-4 py-2 text-sm text-red-800">
+                        {flash.error}
+                    </div>
+                )}
 
                 <div className="mt-4 flex flex-wrap items-start justify-between gap-4">
                     <div>
                         <h1 className="text-2xl font-medium text-gray-900">{lesson.title}</h1>
                         <p className="mt-2 text-sm text-gray-500">
-                            Status: <strong>{status}</strong>
+                            Generation: <strong>{status}</strong>
+                            <span className="text-gray-400"> · </span>
+                            Lesson record: <strong>{lesson.status}</strong> (draft until you publish)
                         </p>
                     </div>
                     <div className="flex flex-wrap gap-2">
@@ -250,6 +266,62 @@ export default function LessonsShow() {
                     </div>
                 )}
 
+                {status === 'failed' && (
+                    <div className="mt-6 max-w-2xl rounded-lg border border-red-200 bg-red-50/80 p-4 text-sm text-gray-800">
+                        <h2 className="font-semibold text-red-900">Generation failed</h2>
+                        <p className="mt-2">
+                            {typeof progress?.message === 'string' && progress.message ? (
+                                <span className="font-medium text-red-950">{progress.message}</span>
+                            ) : (
+                                <span>See details below or in <code className="text-xs">storage/logs</code>.</span>
+                            )}
+                        </p>
+                        {typeof progress?.hint === 'string' && progress.hint && (
+                            <p className="mt-2 text-xs text-gray-700">{progress.hint}</p>
+                        )}
+                        {typeof progress?.response_preview === 'string' && progress.response_preview && (
+                            <details className="mt-3">
+                                <summary className="cursor-pointer text-xs font-medium text-gray-600">
+                                    Model response preview
+                                </summary>
+                                <pre className="mt-2 max-h-40 overflow-auto rounded border border-red-100 bg-white p-2 text-xs text-gray-700 whitespace-pre-wrap break-words">
+                                    {progress.response_preview}
+                                </pre>
+                            </details>
+                        )}
+                        <div className="mt-4 flex flex-wrap gap-2">
+                            <button
+                                type="button"
+                                className="rounded-md bg-[#1E3A5F] px-3 py-1.5 text-xs font-medium text-white hover:opacity-95 disabled:opacity-50"
+                                disabled={lesson.status === 'published'}
+                                onClick={() => {
+                                    if (
+                                        !confirm(
+                                            'Delete generated scenes and retry from the outline? Unsaved scene edits will be lost.',
+                                        )
+                                    ) {
+                                        return;
+                                    }
+                                    router.post(`/teach/lessons/${lesson.id}/regenerate`);
+                                }}
+                            >
+                                Regenerate lesson
+                            </button>
+                            {lesson.status === 'published' && (
+                                <span className="text-xs text-gray-600">
+                                    Unpublish in Lesson details before regenerating.
+                                </span>
+                            )}
+                        </div>
+                        {orderedScenes.length === 0 && (
+                            <p className="mt-3 text-xs text-gray-700">
+                                The <strong>Publish to space</strong> section appears after generation succeeds, or after you
+                                add at least one scene in the list below and finish editing it.
+                            </p>
+                        )}
+                    </div>
+                )}
+
                 <div className="mt-10">
                     <h2 className="text-sm font-semibold text-gray-800">Scenes</h2>
                     <div className="mt-2 flex flex-wrap gap-2">
@@ -270,6 +342,9 @@ export default function LessonsShow() {
                                         <span className="text-gray-400">
                                             ({s.scene_type}) — {s.generation_status}
                                         </span>
+                                        {s.generation_error && (
+                                            <p className="mt-1 text-xs text-red-700">{s.generation_error}</p>
+                                        )}
                                     </div>
                                     <div className="flex flex-wrap gap-1">
                                         <button
@@ -359,9 +434,14 @@ export default function LessonsShow() {
                     </div>
                 </div>
 
-                {status === 'completed' && (
+                {canPublishToSpace && (
                     <form onSubmit={publish} className="mt-10 max-w-md space-y-3 rounded-lg border border-gray-200 bg-white p-4">
                         <h2 className="text-sm font-semibold text-gray-800">Publish to space</h2>
+                        {status === 'failed' && (
+                            <p className="text-xs text-amber-800">
+                                Auto-generation did not finish, but you have scenes — you can publish when content is ready.
+                            </p>
+                        )}
                         <select
                             className="w-full rounded border p-2 text-sm"
                             value={spaceId}

@@ -21,13 +21,25 @@ class TopicScopeService
 
         $system = <<<'SYS'
 You classify whether a K-12 student's chat message is on-topic for the given teaching scope.
+
+Count as ON-TOPIC (in_scope:true) when the message asks for help with the scoped subject, including:
+- diagrams, illustrations, images, pictures, charts, or other visual aids about the topic
+- explanations, examples, analogies, practice questions, summaries, or step-by-step help
+- clarifying vocabulary or concepts tied to the scope
+
+Count as OFF-TOPIC (in_scope:false) only when the message is clearly unrelated to the scope, casual non-academic chit-chat, or asks for disallowed help (e.g. completing graded work for them) with no legitimate learning angle.
+
 Reply with ONLY compact JSON: {"in_scope":true} or {"in_scope":false}.
-No markdown, no explanation.
+No markdown fences, no explanation.
 SYS;
 
         $user = "Scope:\n{$ctx->scopeDescription}\n\nStudent message:\n".Str::limit($studentMessage, 1500);
 
-        $raw = trim($this->llm->complete($system, $user, 120));
+        try {
+            $raw = trim($this->llm->complete($system, $user, 120));
+        } catch (\Throwable) {
+            return true;
+        }
         if ($raw === '') {
             return true;
         }
@@ -50,14 +62,22 @@ SYS;
      */
     private function extractJson(string $raw): ?array
     {
-        if (preg_match('/\{[^}]+\}/', $raw, $m)) {
+        $raw = trim($raw);
+        if (preg_match('/^```(?:json)?\s*(\{.*\})\s*```$/s', $raw, $m)) {
+            $raw = $m[1];
+        }
+
+        $decoded = json_decode($raw, true);
+        if (is_array($decoded)) {
+            return $decoded;
+        }
+
+        if (preg_match('/\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}/', $raw, $m)) {
             $decoded = json_decode($m[0], true);
 
             return is_array($decoded) ? $decoded : null;
         }
 
-        $decoded = json_decode($raw, true);
-
-        return is_array($decoded) ? $decoded : null;
+        return null;
     }
 }

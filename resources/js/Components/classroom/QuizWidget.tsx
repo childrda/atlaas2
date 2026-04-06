@@ -1,3 +1,4 @@
+import { buildCsrfFetchHeaders } from '@/lib/laravelCsrf';
 import { useState } from 'react';
 
 interface QuizQuestion {
@@ -56,10 +57,11 @@ export default function QuizWidget({ questions, sceneId, sessionId, onComplete, 
         try {
             const res = await fetch(`/learn/classroom/${sessionId}/quiz/${sceneId}`, {
                 method: 'POST',
+                credentials: 'same-origin',
                 headers: {
                     'Content-Type': 'application/json',
                     Accept: 'application/json',
-                    'X-CSRF-TOKEN': document.querySelector<HTMLMetaElement>('meta[name="csrf-token"]')?.content ?? '',
+                    ...buildCsrfFetchHeaders(),
                 },
                 body: JSON.stringify({ question_index: currentIdx, answer }),
             });

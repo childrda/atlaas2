@@ -27,7 +27,9 @@ export default function ClassroomContent({
     const sceneType = scene?.scene_type as string | undefined;
 
     const showAdvance =
-        !lessonComplete && scene && ['slide', 'interactive', 'discussion'].includes(sceneType ?? '');
+        !lessonComplete &&
+        scene &&
+        ['slide', 'interactive', 'discussion', 'pbl'].includes(sceneType ?? '');
 
     const advanceLabel = hasNextScene ? 'Next section' : 'Finish lesson';
 

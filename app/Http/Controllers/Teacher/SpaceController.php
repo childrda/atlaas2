@@ -59,6 +59,8 @@ class SpaceController extends Controller
             'student_mode' => ['required', Rule::in($allowed)],
         ]);
 
+        $data['multi_agent_classroom_enabled'] = $request->boolean('multi_agent_classroom_enabled', true);
+
         $space = LearningSpace::create([
             ...$data,
             'district_id' => $request->user()->district_id,
@@ -102,7 +104,7 @@ class SpaceController extends Controller
         $this->authorize('update', $space);
 
         $allowed = $this->sessionModeResolver->allowedModesForTeacher($request->user());
-        $space->update($request->validate([
+        $validated = $request->validate([
             'title' => 'required|string|max:150',
             'description' => 'nullable|string|max:1000',
             'subject' => 'nullable|string|max:100',
@@ -119,7 +121,10 @@ class SpaceController extends Controller
             'language' => 'string|max:10',
             'max_messages' => 'nullable|integer|min:5|max:500',
             'student_mode' => ['required', Rule::in($allowed)],
-        ]));
+        ]);
+        $validated['multi_agent_classroom_enabled'] = $request->boolean('multi_agent_classroom_enabled');
+
+        $space->update($validated);
 
         return back()->with('success', 'Space updated.');
     }

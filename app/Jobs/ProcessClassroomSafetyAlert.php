@@ -19,15 +19,15 @@ class ProcessClassroomSafetyAlert implements ShouldBeEncrypted, ShouldQueue
 {
     use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
 
-    public string $queue = 'critical';
-
     public int $tries = 3;
 
     public function __construct(
         public ClassroomSession $session,
         public FlagResult $flag,
         public string $triggerContent,
-    ) {}
+    ) {
+        $this->onQueue('critical');
+    }
 
     public function handle(): void
     {

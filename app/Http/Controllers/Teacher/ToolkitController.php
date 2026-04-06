@@ -5,6 +5,8 @@ namespace App\Http\Controllers\Teacher;
 use App\Http\Controllers\Controller;
 use App\Models\TeacherTool;
 use App\Models\ToolRun;
+use App\Services\AI\OpenAiChatParameters;
+use App\Services\AI\OpenAiUserFacingMessage;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Validation\ValidationException;
@@ -81,12 +83,13 @@ class ToolkitController extends Controller
                 $fullOutput = '';
 
                 try {
-                    $stream = OpenAI::chat()->createStreamed([
-                        'model' => config('openai.model'),
-                        'messages' => [['role' => 'user', 'content' => $prompt]],
-                        'max_tokens' => 1500,
-                        'temperature' => 0.7,
-                    ]);
+                    $stream = OpenAI::chat()->createStreamed(
+                        OpenAiChatParameters::withMaxOutputTokens([
+                            'model' => config('openai.model'),
+                            'messages' => [['role' => 'user', 'content' => $prompt]],
+                            'temperature' => 0.7,
+                        ], 1500)
+                    );
 
                     foreach ($stream as $response) {
                         $chunk = $response->choices[0]->delta->content ?? '';
@@ -112,7 +115,7 @@ class ToolkitController extends Controller
                     report($e);
                     echo 'data: '.json_encode([
                         'type' => 'error',
-                        'message' => 'Something went wrong. Please try again.',
+                        'message' => OpenAiUserFacingMessage::from($e),
                     ])."\n\n";
                 }
 

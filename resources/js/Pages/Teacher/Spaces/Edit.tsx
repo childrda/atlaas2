@@ -36,6 +36,7 @@ export default function SpacesEdit() {
         language: space.language ?? 'en',
         max_messages: space.max_messages != null ? String(space.max_messages) : '',
         student_mode: space.student_mode ?? 'teacher_session',
+        multi_agent_classroom_enabled: space.multi_agent_classroom_enabled ?? true,
     });
 
     function submit(e: FormEvent) {
@@ -57,6 +58,7 @@ export default function SpacesEdit() {
                 max_messages:
                     form.data.max_messages === '' ? null : Number(form.data.max_messages),
                 student_mode: form.data.student_mode,
+                multi_agent_classroom_enabled: form.data.multi_agent_classroom_enabled,
             },
             { onFinish: () => setSubmitting(false) }
         );
@@ -123,6 +125,23 @@ export default function SpacesEdit() {
                                 </label>
                             ))}
                         </div>
+                    </div>
+                    <div className="rounded-lg border border-gray-100 bg-gray-50/80 p-4">
+                        <label className="flex cursor-pointer items-start gap-3 text-sm">
+                            <input
+                                type="checkbox"
+                                className="mt-0.5"
+                                checked={form.data.multi_agent_classroom_enabled}
+                                onChange={(e) => form.setData('multi_agent_classroom_enabled', e.target.checked)}
+                            />
+                            <span>
+                                <span className="font-medium text-gray-900">Multi-agent classroom</span>
+                                <span className="mt-1 block text-xs text-gray-600">
+                                    When a published lesson is ready, students see &quot;Open multi-agent
+                                    classroom&quot;. Uncheck to offer only the standard chat for this space.
+                                </span>
+                            </span>
+                        </label>
                     </div>
                     <div>
                         <label className="block text-sm font-medium text-gray-700">Classroom</label>

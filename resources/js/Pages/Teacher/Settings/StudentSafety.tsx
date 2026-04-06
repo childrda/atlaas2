@@ -178,7 +178,10 @@ function ModeCheckboxes({
     return (
         <div className="mt-4 space-y-2 text-sm">
             <label className="flex items-center gap-2">
-                <input type="hidden" name={names.teacher} value="0" />
+                {/*
+                  Do not use a hidden input before the checkbox: FormData.get(name) returns the *first*
+                  value, so checked boxes would always read as "0" and never save as enabled.
+                */}
                 <input
                     type="checkbox"
                     name={names.teacher}
@@ -188,12 +191,10 @@ function ModeCheckboxes({
                 Teacher session mode
             </label>
             <label className="flex items-center gap-2">
-                <input type="hidden" name={names.lms} value="0" />
                 <input type="checkbox" name={names.lms} value="1" defaultChecked={s.lms_help_enabled} />
                 LMS help mode (uses lms_enrollments)
             </label>
             <label className="flex items-center gap-2">
-                <input type="hidden" name={names.open} value="0" />
                 <input type="checkbox" name={names.open} value="1" defaultChecked={s.open_tutor_enabled} />
                 Open tutor mode (K-12 academic)
             </label>

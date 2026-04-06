@@ -68,4 +68,16 @@ return [
     'max_output_tokens' => (int) env('OPENAI_MAX_OUTPUT_TOKENS', 2000),
 
     'classroom_stream_max_tokens' => (int) env('OPENAI_CLASSROOM_STREAM_MAX_TOKENS', 2000),
+
+    /*
+    |--------------------------------------------------------------------------
+    | Chat completion output token parameter
+    |--------------------------------------------------------------------------
+    |
+    | Some models only accept max_completion_tokens (not max_tokens). Set to
+    | max_completion_tokens if the API returns: "Unsupported parameter: max_tokens".
+    | Leave null for auto-detection from OPENAI_MODEL (o*, gpt-5*, gpt-4.1*, etc.).
+    |
+    */
+    'chat_completion_token_param' => env('OPENAI_CHAT_COMPLETION_TOKEN_PARAM'),
 ];

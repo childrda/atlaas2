@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\Auth\LoginController;
 use App\Http\Controllers\Auth\SocialiteController;
+use App\Http\Controllers\Student\ClassroomModeController;
 use App\Http\Controllers\Student\MessageController;
 use App\Http\Controllers\Student\SessionController;
 use App\Http\Controllers\Student\StudentDashboardController;
@@ -9,17 +10,16 @@ use App\Http\Controllers\Student\StudentJoinController;
 use App\Http\Controllers\Student\StudentSpaceController;
 use App\Http\Controllers\Student\TTSController;
 use App\Http\Controllers\Teacher\AlertController;
-use App\Http\Controllers\Student\ClassroomModeController;
 use App\Http\Controllers\Teacher\ClassroomController;
+use App\Http\Controllers\Teacher\CompassController;
+use App\Http\Controllers\Teacher\DiscoverController;
 use App\Http\Controllers\Teacher\LessonAgentController;
 use App\Http\Controllers\Teacher\LessonClassroomSessionController;
 use App\Http\Controllers\Teacher\LessonController;
 use App\Http\Controllers\Teacher\LessonSceneController;
 use App\Http\Controllers\Teacher\LmsSyncController;
-use App\Http\Controllers\Teacher\StudentSafetySettingsController;
-use App\Http\Controllers\Teacher\CompassController;
-use App\Http\Controllers\Teacher\DiscoverController;
 use App\Http\Controllers\Teacher\SpaceController;
+use App\Http\Controllers\Teacher\StudentSafetySettingsController;
 use App\Http\Controllers\Teacher\TeacherDashboardController;
 use App\Http\Controllers\Teacher\ToolkitController;
 use Illuminate\Support\Facades\Route;
@@ -89,6 +89,7 @@ Route::middleware(['auth', 'role:teacher,school_admin,district_admin'])
         Route::delete('lessons/{lesson}', [LessonController::class, 'destroy'])->name('lessons.destroy');
         Route::get('lessons/{lesson}/export', [LessonController::class, 'export'])->name('lessons.export');
         Route::get('lessons/{lesson}/status', [LessonController::class, 'status'])->name('lessons.status');
+        Route::post('lessons/{lesson}/regenerate', [LessonController::class, 'regenerate'])->name('lessons.regenerate');
         Route::post('lessons/{lesson}/publish', [LessonController::class, 'publish'])->name('lessons.publish');
 
         Route::get('lessons/{lesson}/sessions', [LessonClassroomSessionController::class, 'index'])->name('lessons.sessions.index');

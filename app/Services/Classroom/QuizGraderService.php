@@ -64,7 +64,11 @@ class QuizGraderService
         $guidance = (string) ($question['commentPrompt'] ?? 'Grade for conceptual understanding.');
         $userPrompt = "Question: {$question['question']}\nFull marks: {$maxScore} points\nGrading guidance: {$guidance}\nStudent answer: {$studentAnswer}";
 
-        $response = $this->llm->complete($systemPrompt, $userPrompt, 200);
+        try {
+            $response = $this->llm->complete($systemPrompt, $userPrompt, 200);
+        } catch (\Throwable) {
+            $response = '';
+        }
 
         if (preg_match('/\{[^}]+\}/s', $response, $m)) {
             $parsed = json_decode($m[0], true);

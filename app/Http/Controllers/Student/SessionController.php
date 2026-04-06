@@ -7,6 +7,7 @@ use App\Events\SessionStarted;
 use App\Http\Controllers\Controller;
 use App\Http\Controllers\Student\Concerns\AuthorizesStudentLearningSpace;
 use App\Jobs\GenerateSessionSummary;
+use App\Models\ClassroomLesson;
 use App\Models\LearningSpace;
 use App\Models\StudentSession;
 use App\Services\AI\LLMService;
@@ -77,9 +78,36 @@ class SessionController extends Controller
             return $base;
         });
 
+        $session->load([
+            'space' => function ($query) {
+                $query->select(
+                    'id',
+                    'title',
+                    'description',
+                    'atlaas_tone',
+                    'goals',
+                    'max_messages',
+                    'student_mode',
+                    'multi_agent_classroom_enabled'
+                );
+            },
+        ]);
+
+        $space = $session->space;
+        $lessonReady = ClassroomLesson::query()
+            ->where('space_id', $space->id)
+            ->where('status', 'published')
+            ->where('generation_status', 'completed')
+            ->exists();
+        $multiAgentEnabled = (bool) $space->multi_agent_classroom_enabled;
+        $classroomLessonAvailable = $lessonReady && $multiAgentEnabled;
+
         return Inertia::render('Student/Session', [
-            'session' => $session->load('space:id,title,description,atlaas_tone,goals,max_messages'),
+            'session' => $session,
             'messages' => $messages,
+            'classroomLessonAvailable' => $classroomLessonAvailable,
+            'multiAgentClassroomEnabled' => $multiAgentEnabled,
+            'classroomLessonReady' => $lessonReady,
         ]);
     }
 

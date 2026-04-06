@@ -1,8 +1,9 @@
-import ClassroomContent from '@/components/classroom/ClassroomContent';
-import WhiteboardCanvas from '@/components/classroom/WhiteboardCanvas';
+import ClassroomContent from '@/Components/classroom/ClassroomContent';
+import WhiteboardCanvas from '@/Components/classroom/WhiteboardCanvas';
 import StudentLayout from '@/Layouts/StudentLayout';
+import { buildCsrfFetchHeaders } from '@/lib/laravelCsrf';
 import { Link, router, usePage } from '@inertiajs/react';
-import { FormEvent, useCallback, useMemo, useState } from 'react';
+import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 interface Agent {
     id: string;
@@ -18,8 +19,9 @@ export default function ClassroomPage() {
         lesson: Record<string, unknown> & { title: string; space_id: string | null; scenes?: unknown[] };
         agents: Agent[];
         initialMessages: Record<string, unknown>[];
+        csrf_token?: string;
     };
-    const { session, lesson, agents, initialMessages } = props;
+    const { session, lesson, agents, initialMessages, csrf_token: inertiaCsrf } = props;
 
     const [messages, setMessages] = useState<Record<string, unknown>[]>(initialMessages ?? []);
     const [input, setInput] = useState('');
@@ -32,6 +34,15 @@ export default function ClassroomPage() {
     );
     const [lessonComplete, setLessonComplete] = useState(false);
     const [advancing, setAdvancing] = useState(false);
+    const [actionError, setActionError] = useState<string | null>(null);
+    const inputRef = useRef<HTMLInputElement>(null);
+
+    useEffect(() => {
+        if (!streaming) {
+            const id = requestAnimationFrame(() => inputRef.current?.focus());
+            return () => cancelAnimationFrame(id);
+        }
+    }, [streaming]);
 
     const orderedScenes = useMemo(() => {
         const scenes = (lesson.scenes ?? []) as Record<string, unknown>[];
@@ -51,30 +62,45 @@ export default function ClassroomPage() {
     const hasNextScene = sceneIndex >= 0 && sceneIndex < orderedScenes.length - 1;
 
     const advanceScene = useCallback(async () => {
+        setActionError(null);
         setAdvancing(true);
         try {
             const res = await fetch(`/learn/classroom/${session.id}/advance`, {
                 method: 'POST',
+                credentials: 'same-origin',
                 headers: {
                     'Content-Type': 'application/json',
                     Accept: 'application/json',
-                    'X-CSRF-TOKEN':
-                        document.querySelector<HTMLMetaElement>('meta[name="csrf-token"]')?.content ?? '',
+                    ...buildCsrfFetchHeaders(inertiaCsrf),
                 },
                 body: JSON.stringify({}),
             });
-            const data = (await res.json()) as {
-                current_scene_id: string | null;
-                lesson_complete: boolean;
-            };
+            const raw = await res.text();
+            if (!res.ok) {
+                setActionError(
+                    res.status === 419
+                        ? 'Your session expired. Refresh the page and try again.'
+                        : raw.replace(/<[^>]+>/g, ' ').slice(0, 180).trim() || `Could not advance (${res.status}).`,
+                );
+                return;
+            }
+            let data: { current_scene_id: string | null; lesson_complete: boolean };
+            try {
+                data = JSON.parse(raw) as typeof data;
+            } catch {
+                setActionError('Unexpected response from the server. Try refreshing the page.');
+                return;
+            }
             setCurrentSceneId(data.current_scene_id);
             if (data.lesson_complete) {
                 setLessonComplete(true);
             }
+        } catch {
+            setActionError('Network error — check your connection and try again.');
         } finally {
             setAdvancing(false);
         }
-    }, [session.id]);
+    }, [session.id, inertiaCsrf]);
 
     const sendMessage = useCallback(async () => {
         const text = input.trim();
@@ -82,6 +108,7 @@ export default function ClassroomPage() {
 
         setInput('');
         setStreaming(true);
+        setActionError(null);
         const userMsg = {
             id: `local-${Date.now()}`,
             role: 'student',
@@ -92,16 +119,28 @@ export default function ClassroomPage() {
         let bufferAgent = '';
         const res = await fetch(`/learn/classroom/${session.id}/message`, {
             method: 'POST',
+            credentials: 'same-origin',
             headers: {
                 'Content-Type': 'application/json',
                 Accept: 'text/event-stream',
-                'X-CSRF-TOKEN': document.querySelector<HTMLMetaElement>('meta[name="csrf-token"]')?.content ?? '',
+                ...buildCsrfFetchHeaders(inertiaCsrf),
             },
             body: JSON.stringify({ content: text }),
         });
 
-        if (!res.ok || !res.body) {
+        if (!res.ok) {
+            const errBody = await res.text();
             setStreaming(false);
+            setActionError(
+                res.status === 419
+                    ? 'Your session expired. Refresh the page and try again.'
+                    : errBody.replace(/<[^>]+>/g, ' ').slice(0, 200).trim() || `Could not send message (${res.status}).`,
+            );
+            return;
+        }
+        if (!res.body) {
+            setStreaming(false);
+            setActionError('No response stream from the server. Try again or refresh.');
             return;
         }
 
@@ -141,6 +180,36 @@ export default function ClassroomPage() {
                 const t = String(evt.type ?? '');
                 const data = (evt.data ?? {}) as Record<string, unknown>;
 
+                if (t === 'cue_user') {
+                    const cue = String(data.prompt ?? '').trim();
+                    if (cue) {
+                        setMessages((m) => [
+                            ...m,
+                            {
+                                id: `cue-${Date.now()}`,
+                                role: 'agent',
+                                content: cue,
+                                agentName: 'Classroom',
+                                agentEmoji: '💡',
+                                agentColor: '#64748b',
+                            },
+                        ]);
+                    }
+                }
+                if (t === 'error') {
+                    const msg = String(data.message ?? 'Something went wrong.');
+                    setMessages((m) => [
+                        ...m,
+                        {
+                            id: `err-${Date.now()}`,
+                            role: 'agent',
+                            content: msg,
+                            agentName: 'Notice',
+                            agentEmoji: '⚠️',
+                            agentColor: '#b45309',
+                        },
+                    ]);
+                }
                 if (t === 'thinking') {
                     setSpeakingAgentId(String(data.agentId ?? ''));
                 }
@@ -184,7 +253,9 @@ export default function ClassroomPage() {
         }
 
         setStreaming(false);
-    }, [input, session.id, streaming]);
+    }, [input, session.id, streaming, inertiaCsrf]);
+
+    const dismissActionError = () => setActionError(null);
 
     const onSubmit = (e: FormEvent) => {
         e.preventDefault();
@@ -231,6 +302,22 @@ export default function ClassroomPage() {
                 </div>
 
                 <h1 className="text-lg font-medium text-gray-900">{lesson.title}</h1>
+
+                {actionError && (
+                    <div
+                        role="alert"
+                        className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-950"
+                    >
+                        <span>{actionError}</span>
+                        <button
+                            type="button"
+                            onClick={dismissActionError}
+                            className="shrink-0 rounded border border-amber-400 px-2 py-0.5 text-xs font-medium hover:bg-amber-100"
+                        >
+                            Dismiss
+                        </button>
+                    </div>
+                )}
 
                 {lessonComplete && (
                     <div className="rounded-lg border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-900">
@@ -282,11 +369,13 @@ export default function ClassroomPage() {
 
                 <form onSubmit={onSubmit} className="flex gap-2 border-t pt-4">
                     <input
-                        className="min-w-0 flex-1 rounded-lg border border-gray-300 px-3 py-2 text-sm"
+                        ref={inputRef}
+                        className="min-w-0 flex-1 rounded-lg border border-gray-300 px-3 py-2 text-sm read-only:cursor-wait"
                         placeholder="Type your message..."
                         value={input}
                         onChange={(e) => setInput(e.target.value)}
-                        disabled={streaming}
+                        readOnly={streaming}
+                        aria-busy={streaming}
                     />
                     <button
                         type="submit"

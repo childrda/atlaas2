@@ -40,16 +40,21 @@ class StudentSpaceController extends Controller
             ->where('status', 'active')
             ->first();
 
-        $classroomLessonAvailable = ClassroomLesson::query()
+        $classroomLessonReady = ClassroomLesson::query()
             ->where('space_id', $space->id)
             ->where('status', 'published')
             ->where('generation_status', 'completed')
             ->exists();
 
+        $multiAgentEnabled = (bool) $space->multi_agent_classroom_enabled;
+        $classroomLessonAvailable = $classroomLessonReady && $multiAgentEnabled;
+
         return Inertia::render('Student/Spaces/Show', [
             'space' => $space->load('teacher:id,name'),
             'activeSession' => $activeSession,
             'classroomLessonAvailable' => $classroomLessonAvailable,
+            'classroomLessonReadyButDisabled' => $classroomLessonReady && ! $multiAgentEnabled,
+            'multiAgentClassroomEnabled' => $multiAgentEnabled,
         ]);
     }
 }

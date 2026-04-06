@@ -1,3 +1,4 @@
+import { buildCsrfFetchHeaders } from '@/lib/laravelCsrf';
 import { useEffect, useState } from 'react';
 
 interface WhiteboardCanvasProps {
@@ -17,7 +18,8 @@ export default function WhiteboardCanvas({ sessionId, pollMs = 500 }: Whiteboard
         const load = async () => {
             try {
                 const res = await fetch(`/learn/classroom/${sessionId}/whiteboard`, {
-                    headers: { Accept: 'application/json' },
+                    credentials: 'same-origin',
+                    headers: { Accept: 'application/json', ...buildCsrfFetchHeaders() },
                 });
                 if (!res.ok) return;
                 const data = await res.json();
@@ -61,8 +63,9 @@ export default function WhiteboardCanvas({ sessionId, pollMs = 500 }: Whiteboard
 
     if (!state.open && state.elements.length === 0) {
         return (
-            <div className="flex aspect-[1000/562] w-full items-center justify-center rounded-lg border border-dashed border-gray-200 bg-gray-50 text-xs text-gray-400">
-                Whiteboard hidden
+            <div className="flex aspect-[1000/562] w-full flex-col items-center justify-center gap-1 rounded-lg border border-dashed border-gray-200 bg-gray-50 px-4 text-center text-xs text-gray-500">
+                <span className="font-medium text-gray-600">Whiteboard closed</span>
+                <span className="text-gray-400">Your teacher can open it again during the lesson.</span>
             </div>
         );
     }
@@ -72,6 +75,19 @@ export default function WhiteboardCanvas({ sessionId, pollMs = 500 }: Whiteboard
             className="relative w-full overflow-hidden rounded-lg border border-gray-200 bg-white shadow-sm"
             style={{ aspectRatio: '1000/562' }}
         >
+            {state.elements.length === 0 && (
+                <div
+                    className="pointer-events-none absolute inset-0 flex items-center justify-center px-6 text-center text-xs text-gray-400"
+                    style={{
+                        backgroundImage:
+                            'linear-gradient(to right, rgb(243 244 246 / 0.7) 1px, transparent 1px), linear-gradient(to bottom, rgb(243 244 246 / 0.7) 1px, transparent 1px)',
+                        backgroundSize: '24px 24px',
+                    }}
+                    aria-hidden
+                >
+                    Drawings and notes from your teacher will show up here.
+                </div>
+            )}
             {state.elements.map((el, idx) => (
                 <WhiteboardElement key={String(el.id ?? idx)} element={el} index={idx} />
             ))}
